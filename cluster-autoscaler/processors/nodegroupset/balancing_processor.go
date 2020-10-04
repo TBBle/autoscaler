@@ -62,6 +62,8 @@ func (b *BalancingNodeGroupSetProcessor) FindSimilarNodeGroups(context *context.
 		}
 		if comparator(nodeInfo, ngNodeInfo) {
 			result = append(result, ng)
+		} else {
+			klog.V(4).Infof("FindSimilarNodeGroups(%s): %s rejected as not-similar", nodeGroupId, ngId)
 		}
 	}
 	return result, nil

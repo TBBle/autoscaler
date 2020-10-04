@@ -21,6 +21,7 @@ import (
 
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	klog "k8s.io/klog/v2"
 	schedulerframework "k8s.io/kubernetes/pkg/scheduler/framework/v1alpha1"
 )
 
@@ -54,9 +55,10 @@ var BasicIgnoredLabels = map[string]bool{
 type NodeInfoComparator func(n1, n2 *schedulerframework.NodeInfo) bool
 
 func resourceMapsWithinTolerance(resources map[apiv1.ResourceName][]resource.Quantity,
-	maxDifferenceRatio float64) bool {
-	for _, qtyList := range resources {
+	maxDifferenceRatio float64, measurementName string) bool {
+	for kind, qtyList := range resources {
 		if !resourceListWithinTolerance(qtyList, maxDifferenceRatio) {
+			klog.V(4).Infof("resourceMapsWithinTolerance: intolerable difference (> %f) in %s %s: %v", maxDifferenceRatio, measurementName, kind, qtyList)
 			return false
 		}
 	}
@@ -82,8 +84,9 @@ func compareLabels(nodes []*schedulerframework.NodeInfo, ignoredLabels map[strin
 			}
 		}
 	}
-	for _, labelValues := range labels {
+	for labelName, labelValues := range labels {
 		if len(labelValues) != 2 || labelValues[0] != labelValues[1] {
+			klog.V(4).Infof("compareLabels: mismatched label %s: %v", labelName, labelValues)
 			return false
 		}
 	}
@@ -131,11 +134,13 @@ func IsCloudProviderNodeInfoSimilar(n1, n2 *schedulerframework.NodeInfo, ignored
 
 	for kind, qtyList := range capacity {
 		if len(qtyList) != 2 {
+			klog.V(4).Infof("IsCloudProviderNodeInfoSimilar: mismatched capacity %s: %v", kind, qtyList)
 			return false
 		}
 		switch kind {
 		case apiv1.ResourceMemory:
 			if !resourceListWithinTolerance(qtyList, MaxCapacityMemoryDifferenceRatio) {
+				klog.V(4).Infof("IsCloudProviderNodeInfoSimilar: intolerable difference (> %f) in capcity %s: %v", MaxCapacityMemoryDifferenceRatio, kind, qtyList)
 				return false
 			}
 		default:
@@ -143,16 +148,17 @@ func IsCloudProviderNodeInfoSimilar(n1, n2 *schedulerframework.NodeInfo, ignored
 			// If this is ever changed, enforcing MaxCoresTotal limits
 			// as it is now may no longer work.
 			if qtyList[0].Cmp(qtyList[1]) != 0 {
+				klog.V(4).Infof("IsCloudProviderNodeInfoSimilar: unequal capcity %s: %v", kind, qtyList)
 				return false
 			}
 		}
 	}
 
 	// For allocatable and free we allow resource quantities to be within a few % of each other
-	if !resourceMapsWithinTolerance(allocatable, MaxAllocatableDifferenceRatio) {
+	if !resourceMapsWithinTolerance(allocatable, MaxAllocatableDifferenceRatio, "allocatable") {
 		return false
 	}
-	if !resourceMapsWithinTolerance(free, MaxFreeDifferenceRatio) {
+	if !resourceMapsWithinTolerance(free, MaxFreeDifferenceRatio, "free") {
 		return false
 	}
 
